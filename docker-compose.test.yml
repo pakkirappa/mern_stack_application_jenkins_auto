@@ -1,0 +1,54 @@
+# Docker Compose configuration for integration testing
+version: '3.8'
+
+services:
+  mongodb-test:
+    image: mongo:5.0
+    environment:
+      MONGO_INITDB_DATABASE: mernapp_test
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_test_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/mernapp_test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend-test:
+    build: ./backend
+    environment:
+      NODE_ENV: test
+      MONGODB_URI: mongodb://mongodb-test:27017/mernapp_test
+      PORT: 5000
+    ports:
+      - "5000:5000"
+    depends_on:
+      mongodb-test:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend-test:
+    build: ./frontend
+    environment:
+      REACT_APP_API_URL: http://backend-test:5000/api
+      CI: true
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend-test
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  mongodb_test_data:

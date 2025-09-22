@@ -425,6 +425,138 @@ These endpoints can be integrated with monitoring systems like:
 - **Google Cloud Load Balancer** - Set up health checks
 - **Kubernetes** - Automatic integration with liveness/readiness probes
 
+## 🔧 Jenkins CI/CD Pipeline
+
+This project includes a comprehensive Jenkins pipeline configuration for automated building, testing, and deployment.
+
+### **Pipeline Features:**
+
+- ✅ **Automated Building** - Build both frontend and backend
+- ✅ **Testing** - Run unit tests and integration tests
+- ✅ **Health Checks** - Test all health endpoints
+- ✅ **Security Scanning** - Docker image vulnerability scanning
+- ✅ **Docker Integration** - Build and push Docker images
+- ✅ **Kubernetes Deployment** - Automated deployment to K8s
+- ✅ **Notifications** - Slack notifications for build status
+- ✅ **Multi-environment** - Support for dev, staging, production
+
+### **Jenkins Setup:**
+
+1. **Install Required Plugins:**
+   ```bash
+   # Install Jenkins plugins
+   - Pipeline
+   - Docker Pipeline
+   - Kubernetes CLI
+   - Slack Notification
+   - Git
+   - NodeJS
+   - Blue Ocean (optional)
+   ```
+
+2. **Configure Credentials:**
+   ```bash
+   # Add these credentials in Jenkins
+   - mongodb-uri: MongoDB connection string
+   - docker-credentials: Docker registry username/password
+   - docker-registry: Docker registry URL
+   - kubeconfig: Kubernetes configuration file
+   - slack-webhook: Slack webhook URL
+   ```
+
+3. **Create Pipeline Job:**
+   - New Item → Pipeline
+   - Pipeline script from SCM
+   - Repository URL: Your Git repository
+   - Script Path: `JenkinsFile`
+
+### **Environment Variables:**
+
+Configure these in Jenkins or `.env.jenkins`:
+
+```bash
+# Docker Configuration
+DOCKER_REGISTRY=your-registry.com
+DOCKER_NAMESPACE=mern-stack
+
+# Database Configuration
+MONGODB_URI=mongodb://your-mongodb-server:27017/mernapp
+
+# Kubernetes Configuration
+K8S_NAMESPACE_DEV=mern-dev
+K8S_NAMESPACE_STAGING=mern-staging
+K8S_NAMESPACE_PROD=mern-prod
+
+# Notification Configuration
+SLACK_CHANNEL=#deployments
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+```
+
+### **Pipeline Stages:**
+
+1. **📋 Preparation** - Clean workspace and checkout code
+2. **🔧 Setup Environment** - Install Node.js and dependencies  
+3. **📦 Install Dependencies** - Install npm packages for all components
+4. **🔍 Code Quality & Security** - Linting and security audit
+5. **🧪 Testing** - Run unit tests and generate coverage
+6. **🏥 Health Check Tests** - Test all health endpoints
+7. **🏗️ Build** - Build frontend and prepare backend
+8. **🐳 Docker Build** - Create Docker images
+9. **🔒 Security Scan** - Scan images for vulnerabilities
+10. **🧪 Integration Tests** - Run integration tests
+11. **📦 Push Images** - Push to Docker registry
+12. **🚀 Deploy** - Deploy to Kubernetes
+13. **✅ Post-Deployment Tests** - Verify deployment health
+
+### **Manual Build Scripts:**
+
+You can also run builds manually using the provided scripts:
+
+```bash
+# Build the application
+./scripts/build.sh --environment production --type all
+
+# Deploy the application  
+./scripts/deploy.sh --environment production --type kubernetes
+
+# Build and deploy in one command
+npm run build && npm run deploy
+```
+
+### **Jenkins Pipeline Triggers:**
+
+- **GitHub Webhook** - Automatic builds on push
+- **Poll SCM** - Check for changes every 2 minutes
+- **Scheduled Builds** - Nightly builds for testing
+- **Manual Trigger** - Build on demand
+
+### **Monitoring & Notifications:**
+
+The pipeline includes comprehensive monitoring:
+
+- **Build Status** - Success/failure notifications
+- **Test Results** - Unit test and coverage reports
+- **Health Checks** - Endpoint monitoring
+- **Security Alerts** - Vulnerability scan results
+- **Deployment Status** - Kubernetes rollout status
+
+### **Multi-Environment Support:**
+
+| Environment | Branch | Auto-Deploy | Health Checks |
+|-------------|--------|-------------|---------------|
+| Development | feature/* | ❌ | ✅ |
+| Staging | develop | ✅ | ✅ |
+| Production | main/master | ✅ | ✅ |
+
+### **Pipeline Configuration Files:**
+
+- `JenkinsFile` - Main pipeline definition
+- `docker-compose.test.yml` - Integration testing setup
+- `docker-compose.prod.yml` - Production deployment
+- `scripts/build.sh` - Manual build script
+- `scripts/deploy.sh` - Manual deployment script
+- `jenkins/shared-library.groovy` - Reusable pipeline functions
+
 ## �📝 Future Enhancements
 
 - User authentication and authorization
