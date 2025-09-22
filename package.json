@@ -1,0 +1,36 @@
+{
+    "name": "mern-stack-app",
+    "version": "1.0.0",
+    "description": "A complete MERN stack application with CRUD operations for user management",
+    "main": "index.js",
+    "scripts": {
+        "dev": "concurrently \"npm run server\" \"npm run client\"",
+        "server": "cd backend && npm run dev",
+        "client": "cd frontend && npm start",
+        "build": "cd frontend && npm run build",
+        "install-server": "cd backend && npm install",
+        "install-client": "cd frontend && npm install",
+        "install-all": "npm run install-server && npm run install-client",
+        "start": "concurrently \"npm run start-server\" \"npm run start-client\"",
+        "start-server": "cd backend && npm start",
+        "start-client": "cd frontend && npm start"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.0"
+    },
+    "keywords": [
+        "mern",
+        "mongodb",
+        "express",
+        "react",
+        "nodejs",
+        "crud",
+        "full-stack"
+    ],
+    "author": "Your Name",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/pakkirappa/mern_stack_application_jenkins_auto.git"
+    }
+}
