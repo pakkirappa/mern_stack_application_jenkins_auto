@@ -14,17 +14,6 @@ pipeline {
             }
         }
 
-        // stage('Install Node.js') {
-        //     steps {
-        //         sh '''
-        //         curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
-        //         apt-get install -y nodejs
-        //         node -v
-        //         npm -v
-        //         '''
-        //     }
-        // }
-
         stage('Install Backend Deps') {
             steps {
                 dir('backend') {
@@ -70,11 +59,31 @@ pipeline {
                 }
             }
         }
+
+        stage('Push Frontend Build to GitHub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PASS')]) {
+                    dir('frontend/build') {
+                        sh '''
+                        git init
+                        git config user.email "jenkins@example.com"
+                        git config user.name "Jenkins CI"
+
+                        git remote add origin https://${GIT_USER}:${GIT_PASS}@github.com/pakkirappa/mern_stack_application_jenkins_auto.git
+                        git checkout -b gh-pages
+                        git add .
+                        git commit -m "Deploy frontend build from Jenkins [ci skip]"
+                        git push origin gh-pages --force
+                        '''
+                    }
+                }
+            }
+        }
     }
 
     post {
         always {
-            echo "Pipeline finished (check SonarQube for results)."
+            echo "Pipeline finished. Check SonarQube for code quality and GitHub for frontend build."
         }
     }
 }
