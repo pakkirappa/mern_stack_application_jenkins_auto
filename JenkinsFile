@@ -2,21 +2,26 @@ pipeline {
     agent any
 
     environment {
-        NODE_VERSION = '18'
         SONAR_PROJECT_KEY = 'mern_app'
-        SONAR_HOST_URL = 'http://localhost:9000'
-        SONAR_TOKEN = credentials('sonarqube')  // Jenkins credential ID
-    }
-
-    tools {
-        nodejs "Node18"             // configure in Global Tool Config
-        sonarQubeScanner "SonarScanner" // configure in Global Tool Config
+        SONAR_HOST_URL = 'http://sonarqube:9000'
+        SONAR_TOKEN = credentials('sonar-token')  // Jenkins credential ID
     }
 
     stages {
         stage('Checkout') {
             steps {
                 git branch: 'main', url: 'https://github.com/pakkirappa/mern_stack_application_jenkins_auto.git'
+            }
+        }
+
+        stage('Install Node.js') {
+            steps {
+                sh '''
+                curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+                apt-get install -y nodejs
+                node -v
+                npm -v
+                '''
             }
         }
 
@@ -56,7 +61,7 @@ pipeline {
             steps {
                 withSonarQubeEnv('MySonarQube') {
                     sh """
-                        ${tool("SonarScanner")}/bin/sonar-scanner \
+                        npx sonar-scanner \
                         -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                         -Dsonar.sources=backend,frontend \
                         -Dsonar.host.url=${SONAR_HOST_URL} \
@@ -69,7 +74,7 @@ pipeline {
 
     post {
         always {
-            echo "Pipeline finished (check SonarQube for code quality results)."
+            echo "Pipeline finished (check SonarQube for results)."
         }
     }
 }
