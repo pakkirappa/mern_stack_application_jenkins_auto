@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Form,
   Button,
@@ -26,11 +26,7 @@ const EditUser = () => {
     phone: "",
   });
 
-  useEffect(() => {
-    fetchUser();
-  }, [id]);
-
-  const fetchUser = async () => {
+  const fetchUser = useCallback(async () => {
     try {
       setFetchingUser(true);
       const response = await userAPI.getUserById(id);
@@ -49,7 +45,11 @@ const EditUser = () => {
     } finally {
       setFetchingUser(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    fetchUser();
+  }, [id, fetchUser]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

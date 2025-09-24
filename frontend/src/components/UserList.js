@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Card,
   Button,
@@ -24,19 +24,7 @@ const UserList = () => {
   const [totalUsers, setTotalUsers] = useState(0);
   const usersPerPage = 6;
 
-  useEffect(() => {
-    fetchUsers();
-  }, [currentPage]);
-
-  useEffect(() => {
-    if (searchTerm) {
-      handleSearch();
-    } else {
-      fetchUsers();
-    }
-  }, [searchTerm]);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
       const response = await userAPI.getUsers(currentPage, usersPerPage);
@@ -50,9 +38,9 @@ const UserList = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, usersPerPage]);
 
-  const handleSearch = async () => {
+  const handleSearch = useCallback(async () => {
     if (!searchTerm.trim()) {
       fetchUsers();
       return;
@@ -71,7 +59,19 @@ const UserList = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, fetchUsers]);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    if (searchTerm) {
+      handleSearch();
+    } else {
+      fetchUsers();
+    }
+  }, [searchTerm, handleSearch, fetchUsers]);
 
   const handleDelete = async (id, userName) => {
     if (window.confirm(`Are you sure you want to delete ${userName}?`)) {
