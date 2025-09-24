@@ -1,589 +1,81 @@
 pipeline {
     agent any
-    
-    // Environment variables
+
     environment {
         NODE_VERSION = '18'
-        MONGODB_URI = credentials('mongodb-uri')
-        DOCKER_REGISTRY = credentials('docker-registry')
-        DOCKER_CREDENTIALS = credentials('docker-credentials')
-        KUBECONFIG = credentials('sqa_e54b61fd63a85f8f65e857985d929fb14fb4268e')
-        APP_NAME = 'mern-stack-app'
-        BACKEND_IMAGE = "${DOCKER_REGISTRY}/${APP_NAME}-backend"
-        FRONTEND_IMAGE = "${DOCKER_REGISTRY}/${APP_NAME}-frontend"
-        BUILD_NUMBER = "${env.BUILD_NUMBER}"
-        GIT_COMMIT_SHORT = "${env.GIT_COMMIT[0..7]}"
+        SONAR_PROJECT_KEY = 'mern_app'
+        SONAR_HOST_URL = 'http://52.241.248.177:9000'
+        SONAR_TOKEN = credentials('sqa_e54b61fd63a85f8f65e857985d929fb14fb4268e')  // Jenkins credential ID
     }
-    
-    // Build triggers
-    triggers {
-        // Poll SCM every 2 minutes for changes
-        pollSCM('H/2 * * * *')
-        // Trigger builds on webhook (GitHub/GitLab)
-        githubPush()
-    }
-    
-    // Pipeline options
-    options {
-        // Keep builds for 30 days, max 50 builds
-        buildDiscarder(logRotator(numToKeepStr: '50', daysToKeepStr: '30'))
-        // Timeout the whole pipeline after 30 minutes
-        timeout(time: 30, unit: 'MINUTES')
-        // Don't allow concurrent builds of the same branch
-        disableConcurrentBuilds()
-        // Add timestamps to console output
-        timestamps()
-        // Skip checkout to default agent
-        skipDefaultCheckout()
-    }
-    
+
     stages {
-        stage('📋 Preparation') {
+        stage('Checkout') {
             steps {
-                script {
-                    echo "🚀 Starting build for ${APP_NAME}"
-                    echo "📊 Build Number: ${BUILD_NUMBER}"
-                    echo "🔧 Git Commit: ${GIT_COMMIT_SHORT}"
-                    echo "🌿 Branch: ${env.BRANCH_NAME ?: 'main'}"
-                }
-                
-                // Clean workspace
-                cleanWs()
-                
-                // Checkout code
-                checkout scm
-                
-                // Display build information
+                git branch: 'main', url: 'https://github.com/pakkirappa/mern_stack_application_jenkins_auto.git'
+            }
+        }
+
+        stage('Setup Node.js') {
+            steps {
                 sh '''
-                    echo "=== Build Environment ==="
-                    echo "Node Version: $(node --version 2>/dev/null || echo 'Not installed')"
-                    echo "NPM Version: $(npm --version 2>/dev/null || echo 'Not installed')"
-                    echo "Docker Version: $(docker --version 2>/dev/null || echo 'Not installed')"
-                    echo "Kubectl Version: $(kubectl version --client 2>/dev/null || echo 'Not installed')"
-                    echo "=========================="
+                curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
+                apt-get install -y nodejs
+                node -v
+                npm -v
                 '''
             }
         }
-        
-        stage('🔧 Setup Environment') {
+
+        stage('Install Backend Deps') {
             steps {
-                script {
-                    // Install Node.js if not available
-                    sh '''
-                        # Install Node.js using NodeJS plugin or nvm
-                        if ! command -v node &> /dev/null; then
-                            echo "Installing Node.js ${NODE_VERSION}..."
-                            # This assumes you have NodeJS plugin configured
-                            # Or use nvm if available
-                            curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-                            export NVM_DIR="$HOME/.nvm"
-                            [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-                            nvm install ${NODE_VERSION}
-                            nvm use ${NODE_VERSION}
-                        fi
-                    '''
+                dir('backend') {
+                    sh 'npm install'
                 }
             }
         }
-        
-        stage('📦 Install Dependencies') {
-            parallel {
-                stage('Backend Dependencies') {
-                    steps {
-                        dir('backend') {
-                            sh '''
-                                echo "📦 Installing backend dependencies..."
-                                npm ci --production=false
-                                echo "✅ Backend dependencies installed"
-                            '''
-                        }
-                    }
-                }
-                
-                stage('Frontend Dependencies') {
-                    steps {
-                        dir('frontend') {
-                            sh '''
-                                echo "📦 Installing frontend dependencies..."
-                                npm ci --production=false
-                                echo "✅ Frontend dependencies installed"
-                            '''
-                        }
-                    }
-                }
-                
-                stage('Root Dependencies') {
-                    steps {
-                        sh '''
-                            echo "📦 Installing root dependencies..."
-                            npm ci --production=false
-                            echo "✅ Root dependencies installed"
-                        '''
-                    }
-                }
-            }
-        }
-        
-        stage('🔍 Code Quality & Security') {
-            parallel {
-                stage('Lint Backend') {
-                    steps {
-                        dir('backend') {
-                            sh '''
-                                echo "🔍 Running backend linting..."
-                                # Add ESLint if configured
-                                # npm run lint || echo "No lint script found"
-                                echo "✅ Backend linting completed"
-                            '''
-                        }
-                    }
-                }
-                
-                stage('Lint Frontend') {
-                    steps {
-                        dir('frontend') {
-                            sh '''
-                                echo "🔍 Running frontend linting..."
-                                # npm run lint || echo "No lint script found"
-                                echo "✅ Frontend linting completed"
-                            '''
-                        }
-                    }
-                }
-                
-                stage('Security Audit') {
-                    steps {
-                        script {
-                            sh '''
-                                echo "🔒 Running security audit..."
-                                
-                                # Audit backend
-                                cd backend
-                                npm audit --audit-level=high || echo "Backend audit completed with warnings"
-                                
-                                # Audit frontend
-                                cd ../frontend
-                                npm audit --audit-level=high || echo "Frontend audit completed with warnings"
-                                
-                                echo "✅ Security audit completed"
-                            '''
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('🧪 Testing') {
-            parallel {
-                stage('Backend Tests') {
-                    steps {
-                        dir('backend') {
-                            sh '''
-                                echo "🧪 Running backend tests..."
-                                # Set test environment
-                                export NODE_ENV=test
-                                export MONGODB_URI="mongodb://localhost:27017/mernapp_test"
-                                
-                                # Run tests if available
-                                npm test || echo "No tests configured yet"
-                                echo "✅ Backend tests completed"
-                            '''
-                        }
-                        
-                        // Publish test results if available
-                        script {
-                            if (fileExists('backend/test-results.xml')) {
-                                publishTestResults([
-                                    testResultsPattern: 'backend/test-results.xml'
-                                ])
-                            }
-                        }
-                    }
-                }
-                
-                stage('Frontend Tests') {
-                    steps {
-                        dir('frontend') {
-                            sh '''
-                                echo "🧪 Running frontend tests..."
-                                export CI=true
-                                # npm test -- --coverage --watchAll=false || echo "No tests configured yet"
-                                echo "✅ Frontend tests completed"
-                            '''
-                        }
-                        
-                        // Publish coverage if available
-                        script {
-                            if (fileExists('frontend/coverage/lcov.info')) {
-                                publishCoverage([
-                                    adapters: [lcovAdapter('frontend/coverage/lcov.info')],
-                                    sourceFileResolver: sourceFiles('STORE_LAST_BUILD')
-                                ])
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('🏥 Health Check Tests') {
+
+        stage('Run Backend Tests') {
             steps {
-                script {
-                    // Start backend server for health checks
-                    sh '''
-                        echo "🏥 Testing health check endpoints..."
-                        
-                        cd backend
-                        
-                        # Start server in background
-                        npm start &
-                        SERVER_PID=$!
-                        echo "Server PID: $SERVER_PID"
-                        
-                        # Wait for server to start
-                        echo "⏳ Waiting for server to start..."
-                        sleep 10
-                        
-                        # Test health endpoints
-                        echo "🔍 Testing health endpoints..."
-                        
-                        # Test ping
-                        curl -f http://localhost:5000/ping || exit 1
-                        echo "✅ Ping endpoint working"
-                        
-                        # Test basic health
-                        curl -f http://localhost:5000/health || exit 1
-                        echo "✅ Basic health endpoint working"
-                        
-                        # Test detailed health (allow failure for DB issues)
-                        curl -f http://localhost:5000/health/detailed || echo "⚠️ Detailed health check failed (DB may not be available)"
-                        
-                        # Test liveness
-                        curl -f http://localhost:5000/alive || exit 1
-                        echo "✅ Liveness endpoint working"
-                        
-                        # Test readiness (allow failure for DB issues)
-                        curl -f http://localhost:5000/ready || echo "⚠️ Readiness check failed (DB may not be available)"
-                        
-                        # Test metrics
-                        curl -f http://localhost:5000/metrics || exit 1
-                        echo "✅ Metrics endpoint working"
-                        
-                        # Stop server
-                        kill $SERVER_PID || echo "Server already stopped"
-                        
-                        echo "✅ All health check tests completed"
-                    '''
+                dir('backend') {
+                    sh 'npm test || echo "No backend tests found"'
                 }
             }
         }
-        
-        stage('🏗️ Build') {
-            parallel {
-                stage('Build Frontend') {
-                    steps {
-                        dir('frontend') {
-                            sh '''
-                                echo "🏗️ Building frontend..."
-                                export GENERATE_SOURCEMAP=false
-                                npm run build
-                                echo "✅ Frontend build completed"
-                                
-                                # Check build output
-                                ls -la build/
-                            '''
-                        }
-                        
-                        // Archive build artifacts
-                        archiveArtifacts artifacts: 'frontend/build/**/*', allowEmptyArchive: true
-                    }
-                }
-                
-                stage('Prepare Backend') {
-                    steps {
-                        dir('backend') {
-                            sh '''
-                                echo "📦 Preparing backend for deployment..."
-                                # Remove dev dependencies
-                                npm ci --only=production
-                                echo "✅ Backend prepared"
-                            '''
-                        }
-                    }
-                }
-            }
-        }
-        
-        stage('🐳 Docker Build') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                    branch 'develop'
-                    branch 'staging'
-                }
-            }
-            
+
+        stage('Install Frontend Deps') {
             steps {
-                script {
-                    // Build Docker images
-                    sh '''
-                        echo "🐳 Building Docker images..."
-                        
-                        # Build backend image
-                        cd backend
-                        docker build -t ${BACKEND_IMAGE}:${BUILD_NUMBER} .
-                        docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} ${BACKEND_IMAGE}:latest
-                        
-                        # Build frontend image (if Dockerfile exists)
-                        cd ../frontend
-                        if [ -f "Dockerfile" ]; then
-                            docker build -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} .
-                            docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} ${FRONTEND_IMAGE}:latest
-                        else
-                            echo "No frontend Dockerfile found, skipping frontend image build"
-                        fi
-                        
-                        echo "✅ Docker images built successfully"
-                        
-                        # List built images
-                        docker images | grep ${APP_NAME}
-                    '''
+                dir('frontend') {
+                    sh 'npm install'
                 }
             }
         }
-        
-        stage('🔒 Security Scan') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                    branch 'develop'
-                }
-            }
-            
+
+        stage('Build Frontend') {
             steps {
-                script {
-                    sh '''
-                        echo "🔒 Running Docker security scan..."
-                        
-                        # Scan backend image with Trivy (if available)
-                        if command -v trivy &> /dev/null; then
-                            trivy image ${BACKEND_IMAGE}:${BUILD_NUMBER} || echo "Security scan completed with warnings"
-                        else
-                            echo "Trivy not available, skipping security scan"
-                        fi
-                        
-                        echo "✅ Security scan completed"
-                    '''
+                dir('frontend') {
+                    sh 'npm run build'
                 }
             }
         }
-        
-        stage('🧪 Integration Tests') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                    branch 'develop'
-                }
-            }
-            
+
+        stage('SonarQube Analysis') {
             steps {
-                script {
-                    sh '''
-                        echo "🧪 Running integration tests..."
-                        
-                        # Start services with docker-compose (if available)
-                        if [ -f "docker-compose.test.yml" ]; then
-                            docker-compose -f docker-compose.test.yml up -d
-                            
-                            # Wait for services to be ready
-                            sleep 30
-                            
-                            # Run integration tests
-                            # Add your integration test commands here
-                            
-                            # Cleanup
-                            docker-compose -f docker-compose.test.yml down
-                        else
-                            echo "No docker-compose.test.yml found, skipping integration tests"
-                        fi
-                        
-                        echo "✅ Integration tests completed"
-                    '''
-                }
-            }
-        }
-        
-        stage('📦 Push Images') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                    branch 'develop'
-                    branch 'staging'
-                }
-            }
-            
-            steps {
-                script {
-                    // Login to Docker registry
-                    withCredentials([usernamePassword(credentialsId: 'docker-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh '''
-                            echo "🔐 Logging into Docker registry..."
-                            echo $DOCKER_PASS | docker login ${DOCKER_REGISTRY} -u $DOCKER_USER --password-stdin
-                            
-                            echo "📦 Pushing Docker images..."
-                            
-                            # Push backend image
-                            docker push ${BACKEND_IMAGE}:${BUILD_NUMBER}
-                            docker push ${BACKEND_IMAGE}:latest
-                            
-                            # Push frontend image if it exists
-                            if docker images ${FRONTEND_IMAGE}:${BUILD_NUMBER} | grep -q ${FRONTEND_IMAGE}; then
-                                docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}
-                                docker push ${FRONTEND_IMAGE}:latest
-                            fi
-                            
-                            echo "✅ Images pushed successfully"
-                        '''
-                    }
-                }
-            }
-        }
-        
-        stage('🚀 Deploy') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
-            
-            steps {
-                script {
-                    sh '''
-                        echo "🚀 Deploying to production..."
-                        
-                        # Update Kubernetes deployment
-                        if command -v kubectl &> /dev/null; then
-                            # Update image tags in deployment
-                            kubectl set image deployment/mern-backend mern-backend=${BACKEND_IMAGE}:${BUILD_NUMBER}
-                            
-                            # Wait for deployment to complete
-                            kubectl rollout status deployment/mern-backend --timeout=300s
-                            
-                            # Check deployment health
-                            kubectl get pods -l app=mern-backend
-                            
-                            echo "✅ Deployment completed successfully"
-                        else
-                            echo "kubectl not available, skipping Kubernetes deployment"
-                        fi
-                    '''
-                }
-            }
-        }
-        
-        stage('✅ Post-Deployment Tests') {
-            when {
-                anyOf {
-                    branch 'main'
-                    branch 'master'
-                }
-            }
-            
-            steps {
-                script {
-                    sh '''
-                        echo "✅ Running post-deployment health checks..."
-                        
-                        # Get service endpoint (adjust as needed)
-                        ENDPOINT="http://your-app-domain.com"
-                        
-                        # Wait for deployment to be ready
-                        sleep 30
-                        
-                        # Test health endpoints
-                        curl -f ${ENDPOINT}/ping || exit 1
-                        echo "✅ Production ping check passed"
-                        
-                        curl -f ${ENDPOINT}/health || exit 1
-                        echo "✅ Production health check passed"
-                        
-                        curl -f ${ENDPOINT}/alive || exit 1
-                        echo "✅ Production liveness check passed"
-                        
-                        echo "🎉 All post-deployment tests passed!"
-                    '''
+                withSonarQubeEnv('MySonarQube') {
+                    sh """
+                    npx sonar-scanner \
+                      -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                      -Dsonar.sources=backend,frontend \
+                      -Dsonar.host.url=${SONAR_HOST_URL} \
+                      -Dsonar.login=${SONAR_TOKEN}
+                    """
                 }
             }
         }
     }
-    
+
     post {
         always {
-            script {
-                echo "🧹 Cleaning up..."
-                
-                // Clean up Docker images to save space
-                sh '''
-                    # Remove old images
-                    docker image prune -f --filter "until=24h"
-                    
-                    # Remove dangling images
-                    docker image prune -f
-                '''
-                
-                // Archive logs
-                archiveArtifacts artifacts: 'logs/**/*', allowEmptyArchive: true
-            }
-        }
-        
-        success {
-            script {
-                echo "🎉 Pipeline completed successfully!"
-                
-                // Send success notification
-                slackSend(
-                    channel: '#deployments',
-                    color: 'good',
-                    message: "✅ ${APP_NAME} deployment successful!\nBuild: ${BUILD_NUMBER}\nCommit: ${GIT_COMMIT_SHORT}\nBranch: ${env.BRANCH_NAME ?: 'main'}"
-                )
-            }
-        }
-        
-        failure {
-            script {
-                echo "❌ Pipeline failed!"
-                
-                // Send failure notification
-                slackSend(
-                    channel: '#deployments',
-                    color: 'danger',
-                    message: "❌ ${APP_NAME} deployment failed!\nBuild: ${BUILD_NUMBER}\nCommit: ${GIT_COMMIT_SHORT}\nBranch: ${env.BRANCH_NAME ?: 'main'}\nLogs: ${BUILD_URL}console"
-                )
-                
-                // Collect failure logs
-                sh '''
-                    echo "Collecting failure logs..."
-                    mkdir -p logs
-                    docker logs $(docker ps -aq) > logs/docker-logs.txt 2>&1 || true
-                '''
-            }
-        }
-        
-        unstable {
-            script {
-                echo "⚠️ Pipeline completed with warnings!"
-                
-                slackSend(
-                    channel: '#deployments',
-                    color: 'warning',
-                    message: "⚠️ ${APP_NAME} deployment completed with warnings!\nBuild: ${BUILD_NUMBER}\nCommit: ${GIT_COMMIT_SHORT}"
-                )
-            }
+            echo "Pipeline finished (check SonarQube for code quality results)."
         }
     }
 }

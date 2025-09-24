@@ -1,0 +1,254 @@
+# Docker Compose for Jenkins CI/CD deployment
+# This file is optimized for Jenkins automation and deployment
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:5.0
+    container_name: ${APP_NAME:-mern-app}-mongodb-${BUILD_NUMBER:-latest}
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-mernuser}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-mernpass123}
+      MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-mernapp}
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_logs:/var/log/mongodb
+      - ./mongodb/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - mern-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Backend Service
+  backend:
+    image: ${DOCKER_REGISTRY}/${APP_NAME:-mern-stack-app}-backend:${BUILD_NUMBER:-latest}
+    container_name: ${APP_NAME:-mern-app}-backend-${BUILD_NUMBER:-latest}
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      MONGODB_URI: mongodb://${MONGO_USERNAME:-mernuser}:${MONGO_PASSWORD:-mernpass123}@mongodb:27017/${MONGO_DATABASE:-mernapp}?authSource=admin
+      PORT: ${BACKEND_PORT:-5000}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key}
+      CORS_ORIGIN: ${FRONTEND_URL:-http://localhost}
+      # Health check configurations
+      HEALTH_CHECK_ENABLED: "true"
+      METRICS_ENABLED: "true"
+      # Logging configurations
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: json
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - mern-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "curl -f http://localhost:5000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: ${BACKEND_REPLICAS:-2}
+      resources:
+        limits:
+          memory: ${BACKEND_MEMORY_LIMIT:-512M}
+          cpus: ${BACKEND_CPU_LIMIT:-0.5}
+        reservations:
+          memory: ${BACKEND_MEMORY_RESERVATION:-256M}
+          cpus: ${BACKEND_CPU_RESERVATION:-0.25}
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        delay: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - backend_logs:/app/logs
+
+  # Frontend Service (Nginx + React)
+  frontend:
+    image: ${DOCKER_REGISTRY}/${APP_NAME:-mern-stack-app}-frontend:${BUILD_NUMBER:-latest}
+    container_name: ${APP_NAME:-mern-app}-frontend-${BUILD_NUMBER:-latest}
+    environment:
+      REACT_APP_API_URL: ${BACKEND_URL:-http://localhost:5000}/api
+      REACT_APP_VERSION: ${BUILD_NUMBER:-latest}
+      REACT_APP_BUILD_DATE: ${BUILD_DATE:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_HTTPS_PORT:-443}:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - mern-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_MEMORY_LIMIT:-256M}
+          cpus: ${FRONTEND_CPU_LIMIT:-0.25}
+        reservations:
+          memory: ${FRONTEND_MEMORY_RESERVATION:-128M}
+          cpus: ${FRONTEND_CPU_RESERVATION:-0.1}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - frontend_logs:/var/log/nginx
+
+  # Redis Cache (Optional - for session management and caching)
+  redis:
+    image: redis:7-alpine
+    container_name: ${APP_NAME:-mern-app}-redis-${BUILD_NUMBER:-latest}
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispassword}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - mern-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-redispassword}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+    profiles:
+      - cache
+
+  # Nginx Load Balancer (for multiple backend instances)
+  nginx-lb:
+    image: nginx:alpine
+    container_name: ${APP_NAME:-mern-app}-nginx-lb-${BUILD_NUMBER:-latest}
+    ports:
+      - "${LB_PORT:-8080}:80"
+    volumes:
+      - ./nginx/load-balancer.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - backend
+    networks:
+      - mern-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - loadbalancer
+
+  # Monitoring - Prometheus (Optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ${APP_NAME:-mern-app}-prometheus-${BUILD_NUMBER:-latest}
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - mern-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Log Aggregation - Fluentd (Optional)
+  fluentd:
+    image: fluent/fluentd:latest
+    container_name: ${APP_NAME:-mern-app}-fluentd-${BUILD_NUMBER:-latest}
+    volumes:
+      - ./logging/fluentd.conf:/fluentd/etc/fluent.conf:ro
+      - fluentd_logs:/var/log/fluentd
+    ports:
+      - "${FLUENTD_PORT:-24224}:24224"
+    networks:
+      - mern-network
+    restart: unless-stopped
+    profiles:
+      - logging
+
+# Networks
+networks:
+  mern-network:
+    driver: bridge
+    name: ${APP_NAME:-mern-app}-network-${BUILD_NUMBER:-latest}
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes
+volumes:
+  mongodb_data:
+    name: ${APP_NAME:-mern-app}-mongodb-data-${BUILD_NUMBER:-latest}
+    driver: local
+  mongodb_logs:
+    name: ${APP_NAME:-mern-app}-mongodb-logs-${BUILD_NUMBER:-latest}
+    driver: local
+  backend_logs:
+    name: ${APP_NAME:-mern-app}-backend-logs-${BUILD_NUMBER:-latest}
+    driver: local
+  frontend_logs:
+    name: ${APP_NAME:-mern-app}-frontend-logs-${BUILD_NUMBER:-latest}
+    driver: local
+  redis_data:
+    name: ${APP_NAME:-mern-app}-redis-data-${BUILD_NUMBER:-latest}
+    driver: local
+  nginx_logs:
+    name: ${APP_NAME:-mern-app}-nginx-logs-${BUILD_NUMBER:-latest}
+    driver: local
+  prometheus_data:
+    name: ${APP_NAME:-mern-app}-prometheus-data-${BUILD_NUMBER:-latest}
+    driver: local
+  fluentd_logs:
+    name: ${APP_NAME:-mern-app}-fluentd-logs-${BUILD_NUMBER:-latest}
+    driver: local
