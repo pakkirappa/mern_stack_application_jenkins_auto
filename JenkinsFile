@@ -4,25 +4,19 @@ pipeline {
     environment {
         NODE_VERSION = '18'
         SONAR_PROJECT_KEY = 'mern_app'
-        SONAR_HOST_URL = 'http://sonarqube:9000'
-        SONAR_TOKEN = credentials('sqa_e54b61fd63a85f8f65e857985d929fb14fb4268e')  // Jenkins credential ID
+        SONAR_HOST_URL = 'http://localhost:9000'
+        SONAR_TOKEN = credentials('sonarqube')  // Jenkins credential ID
+    }
+
+    tools {
+        nodejs "Node18"             // configure in Global Tool Config
+        sonarQubeScanner "SonarScanner" // configure in Global Tool Config
     }
 
     stages {
         stage('Checkout') {
             steps {
                 git branch: 'main', url: 'https://github.com/pakkirappa/mern_stack_application_jenkins_auto.git'
-            }
-        }
-
-        stage('Setup Node.js') {
-            steps {
-                sh '''
-                curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
-                apt-get install -y nodejs
-                node -v
-                npm -v
-                '''
             }
         }
 
@@ -59,22 +53,18 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
-    steps {
-        withSonarQubeEnv('MySonarQube') {
-            script {
-                def scannerHome = tool 'SonarScanner'
-                sh """
-                    ${scannerHome}/bin/sonar-scanner \
-                    -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                    -Dsonar.sources=backend,frontend \
-                    -Dsonar.host.url=${SONAR_HOST_URL} \
-                    -Dsonar.login=${SONAR_TOKEN}
-                """
+            steps {
+                withSonarQubeEnv('MySonarQube') {
+                    sh """
+                        ${tool("SonarScanner")}/bin/sonar-scanner \
+                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                        -Dsonar.sources=backend,frontend \
+                        -Dsonar.host.url=${SONAR_HOST_URL} \
+                        -Dsonar.login=${SONAR_TOKEN}
+                    """
+                }
             }
         }
-    }
-}
-
     }
 
     post {
