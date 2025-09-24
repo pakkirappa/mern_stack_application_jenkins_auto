@@ -5,6 +5,7 @@ pipeline {
         SONAR_PROJECT_KEY = 'mern_app'
         SONAR_HOST_URL = 'http://sonarqube:9000'
         SONAR_TOKEN = credentials('sonarqube')  // Jenkins credential ID
+
     }
 
     stages {
@@ -69,7 +70,7 @@ pipeline {
                         git config user.email "jenkins@example.com"
                         git config user.name "Jenkins CI"
 
-                        git remote add origin https://${GIT_USER}:${GIT_PASS}@github.com/pakkirappa/mern_stack_application_jenkins_auto.git
+                        git remote add origin https://pakkirappa:Pakkirappa1234@@github.com/pakkirappa/mern_stack_application_jenkins_auto.git
                         git checkout -b gh-pages
                         git add .
                         git commit -m "Deploy frontend build from Jenkins [ci skip]"
