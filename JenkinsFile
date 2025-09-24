@@ -4,7 +4,7 @@ pipeline {
     environment {
         NODE_VERSION = '18'
         SONAR_PROJECT_KEY = 'mern_app'
-        SONAR_HOST_URL = 'http://52.241.248.177:9000'
+        SONAR_HOST_URL = 'http://sonarqube:9000'
         SONAR_TOKEN = credentials('sqa_e54b61fd63a85f8f65e857985d929fb14fb4268e')  // Jenkins credential ID
     }
 
